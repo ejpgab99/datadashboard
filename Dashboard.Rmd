@@ -1,0 +1,220 @@
+---
+title: "Dashboard"
+author: "E.J. Gabriel"
+date: "2/16/2022"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+
+library(readxl)
+
+library(tidyverse)
+
+library(DT)
+
+library(ggplot2)
+
+library(stringr)
+
+library(tidyr)
+
+library(readxl)
+
+library(shiny)
+# 
+# setwd("~/Desktop/BIS 412/dashboard-homeless-population")
+
+setwd("~/school/workspace/dashboard-homeless-population")
+
+
+excel_sheets("2007-2020-PIT-Estimates-by-CoC.xlsx")
+
+```
+
+```{r import, echo = FALSE}
+file <- "2007-2020-PIT-Estimates-by-CoC.xlsx"
+selected_sheets <- excel_sheets(file) 
+selected_sheets <- selected_sheets[!selected_sheets %in% c("CoC Mergers", "Revisions", "2020")]
+
+
+dat <- data.frame("CoC Number" = character(),
+                   "CoC Name" = character(),
+                   name = character(),
+                   value = double())
+
+data <- data.frame("CoC Number" = character(),
+                    "CoC Name" = character(),
+                    name = character(),
+                    value = double())
+
+longdat <- data.frame("CoC Number" = character(), "CoC Name" = character(), name = character(),
+                        value = double())
+  
+for(sheet in selected_sheets) {
+    dat <- read_excel(file, sheet = sheet)
+   longdat <- pivot_longer(dat, !c("CoC Number", "CoC Name"))
+   data <- rbind(data, longdat)
+}
+
+
+dat <- read_excel(file, sheet = "2020") %>%
+    select(!"CoC Category")
+longdat <- pivot_longer(dat, !c("CoC Number", "CoC Name"))
+data <- rbind(data, longdat)
+
+rm(dat)
+rm(longdat)
+
+```
+
+```{r, echo = FALSE}
+
+data$year <- str_extract(data$name, "\\d{4}")
+
+
+data$overall <- str_extract_all(data$name, "^Overall Homeless")
+
+data$genderTF <- str_detect(data$name, "Overall Homeless$|Overall Homeless - Female|Overall Homeless - Male|Overall Homeless - Transgender|Overall Homeless - Gender Non-Conforming")
+
+data$state1 <- str_extract_all(data$`CoC Number`, "^[A-Z]{2}")
+
+data$state <- state.name[match(data$state1, state.abb)]
+
+simple_data <- data %>%
+  filter(overall == "Overall Homeless", genderTF == TRUE) %>% drop_na() %>%
+  select(!overall)
+
+simple_data$gender <- str_extract_all(simple_data$name, 
+                                      "Female|Male|Transgender|Gender Non-Conforming", simplify = TRUE) %>%
+  as.factor()
+
+overall_data <- data %>% 
+  filter(name == "Overall Homeless, ") %>% select(state,`CoC Name`, year, value) %>% drop_na()
+
+
+```
+
+## Data {.tabset}
+
+### Overall Homeless By State
+
+Additional Information:
+
+* Each color represented in the overall homeless scatter plot is a CoC. This stands for Continuum of Care Program (HUD). It is a program designed for the community and has a goal for ending homelessness. There are multiple CoCs for different states. Additionally for more information about what the CoC names are please head to the overall homeless data table. (For more information about CoCs feel free to check this link https://www.hudexchange.info/programs/coc/)
+
+```{r, echo = FALSE}
+
+overallbar <- ggplot(overall_data, aes(x = year, y = value)) +
+  geom_bar(stat = "identity", fill = "darksalmon") + 
+  labs(title = "Overall Homeless from 2007 - 2020 in the United States") + theme(plot.title = element_text(size = 12))
+
+overallbar + scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+shinyApp(
+  
+ui = fluidPage(
+  selectInput("state", label = "State:", choice = unique(overall_data$state),
+              selected = "Alaska"),
+  plotOutput("overallplot")
+),
+
+server = function(input, output) { 
+    state <- reactive(input$state)
+    output$overallplot = renderPlot({ overall_data %>% filter(state == input$state) %>%
+     ggplot(mapping = aes(x = year, y = value, color = `CoC Name`)) + 
+      geom_point(size = 2.5, alpha = 0.6) +
+        labs(title = "Overall Homeless by State") + theme(plot.title = element_text(size = 16), legend.position = "none") 
+    })
+  }
+)
+```
+
+### Gender Plot
+
+**Important Information:**
+
+* Note that the recording of overall homelessness by gender was something that was not provided until 2015. In the previous of years of the data overall homelessness by gender was not something that was recorded.
+
+```{r plot, echo = FALSE}
+
+genderplot <- ggplot(data = simple_data, mapping = aes(x = year, y = value, color = gender))  +
+  geom_point(size = 2.5, alpha = 0.6) 
+
+shinyApp(
+
+ui = fluidPage(
+  selectInput("gender", label = "Gender:", choice = unique(simple_data$gender),
+              selected = "Male"),
+  plotOutput("genderplot")
+),
+
+server = function(input, output) {
+  output$genderplot = renderPlot({ simple_data %>% filter(gender == input$gender) %>%
+  ggplot(mapping = aes(x = year, y = value, color = gender))  + 
+  geom_point(size = 2.5, alpha = 0.6) + labs(title = "Overall Homeless By Gender") + theme(plot.title = element_text(size = 16))
+  })
+}
+)
+```
+
+### Overall Homeless By State Table
+
+```{r overall table, echo = FALSE}
+ shinyApp(
+
+ ui = fluidPage(
+     inputPanel(
+       selectInput("state", label = "State:", choice = unique(overall_data$state))),
+       fluidRow(
+       dataTableOutput("overalltable")
+      )
+ ),
+ 
+server = function(input, output) {
+  state <- reactive(input$state)
+  output$overalltable = renderDataTable({ overall_data %>% filter(state == input$state) %>% 
+      select(state, `CoC Name`, year, value)})
+}
+)
+```
+
+
+
+### Overall Homeless By Gender Table
+
+```{r gender table, echo = FALSE}
+shinyApp(
+  
+ui = fluidPage(
+  inputPanel(
+    selectInput("state", label = "State:", choice = unique(simple_data$state))),
+  fluidRow(
+    dataTableOutput("table")
+    )
+),
+
+server = function(input, output) {
+  state <- reactive(input$state)
+    output$table = renderDataTable({ simple_data %>% filter(state == input$state) %>%
+        select(state, `CoC Name`, name, gender, value, year)
+    })
+}
+)
+```
+
+
+
+### About 
+
+*   The data set is titled “Estimated number of homeless people in the United States from 2007 to 2020” (HUD, 2021, p. 6).  Something else of note is that it was released in March 2021 (HUD). This specific set of data is from the 2020 AHAR report on estimates of homelessness.  The set describes the number of homeless in the United States (HUD).It was collected for the Annual Homeless Assessment Report (AHAR). Additionally there are sets on the AHAR page that have prior reports from previous years.  The actual collection and survey was done by the US Department of Housing and Urban Development. The reasoning behind the collection is to report to the U.S. Congress that provides estimates on homelessness statistics. It was also published by the US Department of Housing and Urban Development. I will be referring to them as HUD for short. The HUD counts the number of homeless along the streets and in the shelters on one night. This case is a very general case of homelessness. There are other more specific cases such as rate, homelessness by race, homeless veterans, etc. 
+	
+*   There is one big limitation to this data that could also lead into some cases with missing data. This includes the fact that there may be those that are uncounted due to staying with other friends or family members. It is even stated “it is hard to find every single homeless person that exists”. Additionally there may be other cases where those that can be counted are out of reach. One other limitation that I can think of is when looking at homeless by gender it wasn’t something that was recorded in the past. We had started recording overall homeless by gender in 2015. Everything before 2015 there is no data. There is a source link that links the whole 2020 AHAR report which includes other demographics about homelessness. There are other resource links that link to different versions of the 2020 AHAR report which include PDF, XLSL, and HTML versions. Something of note is the vast information provided in this data set as it has overall homeless from each state in different CoCs. Due to this one of the limitations is finding a way to correctly portray this information. 
+	
+*   The purpose of this dashboard is to show the homeless population in the last 13 years. In addition, I would like to show the homeless population by gender. This includes male, female, transgender, and non-conforming. The reasoning for this is because it is something that hasn't been recorded until recently (2015).
+	
+US Department of Housing and Urban Development, (2021). Estimated number of homeless people in the United States from 2007 to 2020 [Data Set]. https://www-statista-com.offcampus.lib.washington.edu/statistics/555795/estimated-number-of-homeless-people-in-the-us/
+
+US Deparment of Housing and Urban Development, (2021). 2020 AHAR: Part 1 - PIT Estimates of Homelessness in the U.S. [2020 AHAR]. https://www.hudexchange.info/resource/6291/2020-ahar-part-1-pit-estimates-of-homelessness-in-the-us/
+
