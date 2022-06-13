@@ -23,10 +23,10 @@ library(tidyr)
 library(readxl)
 
 library(shiny)
-# 
-# setwd("~/Desktop/BIS 412/dashboard-homeless-population")
 
-setwd("~/school/workspace/dashboard-homeless-population")
+setwd("~/Desktop/BIS 412/dashboard-homeless-population")
+
+# setwd("~/school/workspace/dashboard-homeless-population")
 
 
 excel_sheets("2007-2020-PIT-Estimates-by-CoC.xlsx")
@@ -73,6 +73,7 @@ rm(longdat)
 
 data$year <- str_extract(data$name, "\\d{4}")
 
+data$name <- str_remove_all(data$name, "\\d{4}")
 
 data$overall <- str_extract_all(data$name, "^Overall Homeless")
 
